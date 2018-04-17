@@ -6,34 +6,25 @@ import org.objectweb.asm.tree._
 
 import collection.JavaConverters._
 import scala.collection.mutable
-sealed trait Expr{
-  def eval(): Int
-}
+sealed trait Expr{ def eval(): Int }
 object Expr{
-  case class Num(i: Int) extends Expr{
-    def eval() = i
-  }
-  case class Add(l: Expr, r: Expr) extends Expr{
-    def eval() = l.eval() + r.eval()
-  }
-  case class Sub(l: Expr, r: Expr) extends Expr{
-    def eval() = l.eval() - r.eval()
-  }
-  case class Mul(l: Expr, r: Expr) extends Expr{
-    def eval() = l.eval() * r.eval()
-  }
-  case class Div(l: Expr, r: Expr) extends Expr{
-    def eval() = l.eval() / r.eval()
-  }
+  case class Num(i: Int) extends Expr{ def eval() = i }
+  case class NumByte(i: Byte) extends Expr{ def eval() = i.toInt }
+  case class UDF(e: Expr, f: Int => Int) extends Expr{ def eval() = f(e.eval()) }
+  case class Add(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() + r.eval() }
+  case class Sub(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() - r.eval() }
+  case class Mul(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() * r.eval() }
+  case class Div(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() / r.eval() }
 }
 object Main {
   def main(args: Array[String]): Unit = {
     import Expr._
-    // b^2 - 4ac, b = 10, a = 5, c = 17
-    val a = 5
-    val b = 6
-    val c = 1
-    val expr = Sub(Mul(Num(b), Num(b)), Mul(Mul(Num(4), Num(a)), Num(c)))
+    // sqrt(b^2 - 4ac), b = 10, a = 5, c = 17
+    val (a, b, c) = (5, 6, 1)
+    val expr = UDF(
+      Sub(Mul(Num(b), Num(b)), Mul(Mul(NumByte(4), Num(a)), Num(c))),
+      math.sqrt(_).toInt
+    )
     val determinant = expr.eval()
     println("Hello World " + determinant)
     val determinant2 = devirtualize(expr, "eval")()
@@ -41,6 +32,7 @@ object Main {
   }
 
   def isTrivial(cn: ClassNode, mins: MethodInsnNode) = {
+
     val mn = cn.methods.asScala.find(m => m.name == mins.name && m.desc == mins.desc).get
     val filtered = mn.instructions.iterator().asScala.toVector.filter{
       case _: LabelNode => false
@@ -48,7 +40,7 @@ object Main {
       case _ => true
     }
 
-    filtered match {
+    val res = filtered match {
       case Seq(ins1: VarInsnNode, ins2: FieldInsnNode, ins3: InsnNode) =>
         (ins1.`var` == 0 && ins1.getOpcode == Opcodes.ALOAD) &&
         (ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN) &&
@@ -56,71 +48,73 @@ object Main {
         mins.desc.startsWith("()")
       case _ => false
     }
+    res
   }
 
 
   def recurse(self: Object, cn: ClassNode, methodName: String, out: MethodVisitor, newConst: Object => Any): Unit = {
+//    println("Recurse " + self.getClass)
     val mn = cn.methods.asScala.find(_.name == methodName).get
     val buffer = mutable.Buffer.empty[AbstractInsnNode]
-    for(ins <- mn.instructions.iterator().asScala) (buffer.length, ins.getOpcode) match{
-      case (0, Opcodes.ALOAD) if ins.asInstanceOf[VarInsnNode].`var` == 0 =>
+    for(ins <- mn.instructions.iterator().asScala) {
+      def flush(): Unit = {
         buffer.append(ins)
-
-      case (1, Opcodes.INVOKEVIRTUAL) if isTrivial(cn, ins.asInstanceOf[MethodInsnNode]) =>
-        buffer.append(ins)
-
-      case (2, Opcodes.INVOKEINTERFACE) =>
-        val selected = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name).invoke(self)
-
-        recurse(
-          selected,
-          loadClass(selected),
-          methodName,
-          out,
-          newConst
-        )
-        buffer.clear()
-
-      case _ =>
-        if (buffer.length == 2){
-          val m = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name)
-          val selected = m.invoke(self)
-
-          out.visitLdcInsn(newConst(selected))
-          if (!m.getReturnType.isPrimitive){
-            out.visitTypeInsn(Opcodes.CHECKCAST, selected.getClass.getName.replace('.', '/'))
-          }else{
-
-            val primitive = Type.getType(buffer(1).asInstanceOf[MethodInsnNode].desc).getReturnType.getSort
-            val (boxed, unbox, desc) = primitive match {
-              case Type.BOOLEAN => ("java/lang/Boolean", "booleanValue", "()Z")
-              case Type.BYTE => ("java/lang/Byte", "byteValue", "()B")
-              case Type.CHAR => ("java/lang/Character", "charValue", "()C")
-              case Type.SHORT => ("java/lang/Short", "shortValue", "()S")
-              case Type.INT => ("java/lang/Integer", "intValue", "()I")
-              case Type.FLOAT => ("java/lang/Float", "floatValue", "()F")
-              case Type.LONG => ("java/lang/Long", "longValue", "()J")
-              case Type.DOUBLE => ("java/lang/Double", "doubleValue", "()D")
-            }
-            out.visitTypeInsn(Opcodes.CHECKCAST, boxed)
-            out.visitMethodInsn(Opcodes.INVOKEVIRTUAL, boxed, unbox, desc, false)
-          }
-        }else{
-
-          buffer.append(ins)
-          buffer.foreach{
-            case x: VarInsnNode if x.`var` == 0 && x.getOpcode == Opcodes.ALOAD =>
-              out.visitLdcInsn(newConst(self))
-              out.visitTypeInsn(Opcodes.CHECKCAST, self.getClass.getName.replace('.', '/'))
-            case ins3 if ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN => //skip
-            case x =>
-              //            println(x)
-              x.accept(out)
-          }
+        buffer.foreach{
+          case x: VarInsnNode if x.`var` == 0 && x.getOpcode == Opcodes.ALOAD =>
+            out.visitLdcInsn(newConst(self))
+            out.visitTypeInsn(Opcodes.CHECKCAST, self.getClass.getName.replace('.', '/'))
+          case ins3 if ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN => //skip
+          case x =>
+            //            println(x)
+            x.accept(out)
         }
         buffer.clear()
+      }
+      buffer.length match{
+        case 0 => (ins, ins.getOpcode) match{
+          case (vins: VarInsnNode, Opcodes.ALOAD) if vins.`var` == 0 => buffer.append(ins)
+          case _ => flush()
+        }
+        case 1 => (ins, ins.getOpcode) match{
+          case (mins: MethodInsnNode, Opcodes.INVOKEVIRTUAL) if isTrivial(cn, mins) => buffer.append(ins)
+          case _ => flush()
+
+        }
+        case 2 => (ins, ins.getOpcode) match{
+          case (mins: MethodInsnNode, Opcodes.INVOKEINTERFACE)  =>
+            val selected = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name).invoke(self)
+
+            recurse(
+              selected,
+              loadClass(selected),
+              methodName,
+              out,
+              newConst
+            )
+            buffer.clear()
+          case _ =>
+            val m = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name)
+            val selected = m.invoke(self)
 
 
+            if (!m.getReturnType.isPrimitive){
+              out.visitLdcInsn(newConst(selected))
+
+              out.visitTypeInsn(
+                Opcodes.CHECKCAST,
+                Type.getType(buffer(1).asInstanceOf[MethodInsnNode].desc).getReturnType.getDescriptor
+              )
+            }else{
+              out.visitLdcInsn(selected)
+            }
+            buffer.clear()
+            (ins, ins.getOpcode) match{
+              case (vins: VarInsnNode, Opcodes.ALOAD) if vins.`var` == 0 => buffer.append(ins)
+              case _ => flush()
+
+            }
+        }
+      }
     }
   }
 
@@ -181,7 +175,9 @@ object Main {
     mainMethod.visitMaxs(100, 100)
     mainMethod.visitEnd()
 
-    val patches = new Array[Object](cachedSelfIndices.valuesIterator.max + 1)
+    val patches =
+      if (cachedSelfIndices.isEmpty) null
+      else new Array[Object](cachedSelfIndices.valuesIterator.max + 1)
     for((k, i) <- cachedSelfIndices) patches(i) = k
     (cw.toByteArray, patches)
   }
