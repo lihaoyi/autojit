@@ -35,9 +35,9 @@ object Main {
     val c = 1
     val expr = Sub(Mul(Num(b), Num(b)), Mul(Mul(Num(4), Num(a)), Num(c)))
     val determinant = expr.eval()
-    println("Hello World2 " + determinant)
+    println("Hello World " + determinant)
     val determinant2 = devirtualize(expr, "eval")()
-    println("Hello World2 " + determinant2)
+    println("Hello World Jitted " + determinant2)
   }
 
   def isTrivial(cn: ClassNode, mins: MethodInsnNode) = {
@@ -69,8 +69,9 @@ object Main {
       case (1, Opcodes.INVOKEVIRTUAL) if isTrivial(cn, ins.asInstanceOf[MethodInsnNode]) =>
         buffer.append(ins)
 
-      case (2, Opcodes.INVOKEINTERFACE) if ins.asInstanceOf[MethodInsnNode].name == methodName =>
+      case (2, Opcodes.INVOKEINTERFACE) =>
         val selected = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name).invoke(self)
+
         recurse(
           selected,
           loadClass(selected),
@@ -81,16 +82,41 @@ object Main {
         buffer.clear()
 
       case _ =>
-        buffer.append(ins)
-        buffer.foreach{
-          case x: VarInsnNode if x.`var` == 0 && x.getOpcode == Opcodes.ALOAD =>
-            println("Patching Constant Pool For " + self)
-            out.visitLdcInsn(newConst(self))
-            out.visitTypeInsn(Opcodes.CHECKCAST, self.getClass.getName.replace('.', '/'))
-          case ins3 if ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN => //skip
-          case x =>
-//            println(x)
-            x.accept(out)
+        if (buffer.length == 2){
+          val m = self.getClass.getMethod(buffer(1).asInstanceOf[MethodInsnNode].name)
+          val selected = m.invoke(self)
+
+          out.visitLdcInsn(newConst(selected))
+          if (!m.getReturnType.isPrimitive){
+            out.visitTypeInsn(Opcodes.CHECKCAST, selected.getClass.getName.replace('.', '/'))
+          }else{
+
+            val primitive = Type.getType(buffer(1).asInstanceOf[MethodInsnNode].desc).getReturnType.getSort
+            val (boxed, unbox, desc) = primitive match {
+              case Type.BOOLEAN => ("java/lang/Boolean", "booleanValue", "()Z")
+              case Type.BYTE => ("java/lang/Byte", "byteValue", "()B")
+              case Type.CHAR => ("java/lang/Character", "charValue", "()C")
+              case Type.SHORT => ("java/lang/Short", "shortValue", "()S")
+              case Type.INT => ("java/lang/Integer", "intValue", "()I")
+              case Type.FLOAT => ("java/lang/Float", "floatValue", "()F")
+              case Type.LONG => ("java/lang/Long", "longValue", "()J")
+              case Type.DOUBLE => ("java/lang/Double", "doubleValue", "()D")
+            }
+            out.visitTypeInsn(Opcodes.CHECKCAST, boxed)
+            out.visitMethodInsn(Opcodes.INVOKEVIRTUAL, boxed, unbox, desc, false)
+          }
+        }else{
+
+          buffer.append(ins)
+          buffer.foreach{
+            case x: VarInsnNode if x.`var` == 0 && x.getOpcode == Opcodes.ALOAD =>
+              out.visitLdcInsn(newConst(self))
+              out.visitTypeInsn(Opcodes.CHECKCAST, self.getClass.getName.replace('.', '/'))
+            case ins3 if ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN => //skip
+            case x =>
+              //            println(x)
+              x.accept(out)
+          }
         }
         buffer.clear()
 
@@ -104,7 +130,6 @@ object Main {
       self.getClass,
       {
         val classFile = "/"+self.getClass.getName.replace('.', '/') + ".class"
-        println(classFile)
         val res = getClass.getResourceAsStream(classFile)
         val rawBytes = new Array[Byte](res.available())
         res.read(rawBytes)
@@ -122,7 +147,7 @@ object Main {
     val cw = new ClassWriter(0 /*ClassWriter.COMPUTE_MAXS*/)
 
     cw.visit(
-      Opcodes.V1_6,
+      Opcodes.V1_8,
       Opcodes.ACC_PUBLIC,
       "Hello",
       null,
@@ -158,7 +183,6 @@ object Main {
 
     val patches = new Array[Object](cachedSelfIndices.valuesIterator.max + 1)
     for((k, i) <- cachedSelfIndices) patches(i) = k
-    println(cachedSelfIndices)
     (cw.toByteArray, patches)
   }
 
