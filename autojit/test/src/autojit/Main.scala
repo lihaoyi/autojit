@@ -10,7 +10,7 @@ object Main {
 
     val events = mutable.Buffer.empty[Event]
 
-    val doneMessages = frameworks.map { framework =>
+    for(framework <- frameworks){
       val runner = framework.runner(args, args, getClass.getClassLoader)
 
       val testClasses = Seq(

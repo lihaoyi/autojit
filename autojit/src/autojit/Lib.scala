@@ -132,7 +132,7 @@ object Lib {
 
   def getMethodDescriptor(m: java.lang.reflect.Method) = {
     var s = "("
-    for(c <- m.getParameterTypes()) s+=getDescriptorForClass(c)
+    for(c <- m.getParameterTypes()) s += getDescriptorForClass(c)
     s += ')'
     s + getDescriptorForClass(m.getReturnType())
   }
@@ -212,12 +212,4 @@ object Lib {
     val anon = unsafe.defineAnonymousClass(classOf[Function1[_, _]], transformedBytes, patches)
     anon.newInstance().asInstanceOf[T]
   }
-}
-
-class Dummy extends Function0[Int] {
-  def apply() = 1337
-  //    val res = getClass.getResourceAsStream("/autojit/Dummy.class")
-  //    val out = new Array[Byte](res.available())
-  //    res.read(out)
-  //    res.close()
 }

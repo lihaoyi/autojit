@@ -9,8 +9,18 @@ class InlineValidator(mv: MethodVisitor,
     currentLine = line
     super.visitLineNumber(line, start)
   }
-  override def visitMethodInsn(opcode: Int, owner: String, name: String, descriptor: String, isInterface: Boolean): Unit = {
-    if (owner == bannedOwner && isInterface) throw new Exception("Non-inlined method call slipped through: " + owner + " " + name + "" + descriptor + ":" + currentLine)
-    else super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
+  override def visitMethodInsn(opcode: Int,
+                               owner: String,
+                               name: String,
+                               descriptor: String,
+                               isInterface: Boolean): Unit = {
+    if (owner == bannedOwner && isInterface) {
+      throw new Exception(
+        "Non-inlined method call slipped through: " +
+        owner + " " + name + "" + descriptor + ":" + currentLine
+      )
+    } else {
+      super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
+    }
   }
 }
