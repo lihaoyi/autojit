@@ -1,6 +1,5 @@
 package autojit
 
-import org.objectweb.asm.Opcodes.ASM6
 import org.objectweb.asm._
 import org.objectweb.asm.tree._
 import org.objectweb.asm.tree.analysis.Analyzer
@@ -34,11 +33,9 @@ object Lib {
               cn: ClassNode,
               methodName: String,
               className: String,
-              out: MethodVisitor,
+              withOut: (MethodVisitor => Unit) => String,
               newConst: Object => Any,
-              loadClass: Any => ClassNode): Unit = {
-    println("Recurse " + self.getClass)
-    println(methodName)
+              loadClass: Any => ClassNode): String = withOut{ out =>
     val mn = cn.methods.asScala.find(_.name == methodName).get
     val analyzer = new Analyzer(new Dataflow(true, isTrivial(cn, _), className))
     analyzer.analyze(cn.name, mn)
@@ -54,10 +51,8 @@ object Lib {
     var bufferedMethod: java.lang.reflect.Method = null
     var bufferedValue: AnyRef = null
     for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
-      pprint.log(insn)
       if (i + 1 < frames.length){
         val nextFrame = frames(i+1)
-        pprint.log(nextFrame)
         if (nextFrame != null){
 
           val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
@@ -65,20 +60,18 @@ object Lib {
           else if (nextFrameTop.concrete.isDefined) {
             bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
             bufferedValue = bufferedMethod.invoke(self)
-            if (!inlinedConcreteInsns.contains(insn)){
-              if (!bufferedMethod.getReturnType.isPrimitive){
-                out.visitLdcInsn(newConst(bufferedValue))
-
-                out.visitTypeInsn(
-                  Opcodes.CHECKCAST,
-                  Type.getType(bufferedMethod).getReturnType.getDescriptor
-                )
-              }else{
-                out.visitLdcInsn(bufferedValue)
-              }
+            if (inlinedConcreteInsns.contains(insn)) out.visitVarInsn(Opcodes.ALOAD, 0)
+            else if (bufferedMethod.getReturnType.isPrimitive) out.visitLdcInsn(bufferedValue)
+            else{
+              out.visitLdcInsn(newConst(bufferedValue))
+              out.visitTypeInsn(
+                Opcodes.CHECKCAST,
+                Type.getType(bufferedMethod).getReturnType.getDescriptor
+              )
             }
           }else if (nextFrameTop.inlineable.isDefined) {
-            recurse(bufferedValue, loadClass(bufferedValue), methodName, className, out, newConst, loadClass)
+            val subMethodName = recurse(bufferedValue, loadClass(bufferedValue), methodName, className, withOut, newConst, loadClass)
+            out.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "generated/Hello", subMethodName, mn.desc, false)
           }else {
             insn.accept(out)
           }
@@ -133,14 +126,6 @@ object Lib {
     constructor.visitMaxs(1,1)
     constructor.visitEnd()
 
-    val mainMethod = cw.visitMethod(
-      Opcodes.ACC_PUBLIC,
-      method.getName,
-      getMethodDescriptor(method),
-      null,
-      null
-    )
-
     val cachedSelfPlaceholders = mutable.Map.empty[Object, String]
     val cachedSelfIndices = mutable.Map.empty[Object, Int]
 
@@ -165,9 +150,26 @@ object Lib {
     }
 
     val superClassName = Type.getInternalName(superClass)
+    var methodCount = 0
     recurse(
       self, loadClass(self), method.getName, superClassName,
-      new InlineValidator(mainMethod, superClassName),
+      f => {
+        val methodName = method.getName + (if (methodCount == 0) "" else methodCount)
+        val mainMethod = cw.visitMethod(
+          Opcodes.ACC_PUBLIC,
+          methodName,
+          getMethodDescriptor(method),
+          null,
+          null
+        )
+        methodCount += 1
+        f(new InlineValidator(mainMethod, superClassName))
+
+        mainMethod.visitInsn(Opcodes.IRETURN)
+        mainMethod.visitMaxs(100, 100)
+        mainMethod.visitEnd()
+        methodName
+      },
       self =>
         if (cachedSelfPlaceholders.contains(self)) cachedSelfPlaceholders(self)
         else{
@@ -178,10 +180,6 @@ object Lib {
         },
       loadClass
     )
-    mainMethod.visitInsn(Opcodes.IRETURN)
-    mainMethod.visitMaxs(100, 100)
-    mainMethod.visitEnd()
-
     val patches =
       if (cachedSelfIndices.isEmpty) null
       else new Array[Object](cachedSelfIndices.valuesIterator.max + 1)

@@ -6,6 +6,7 @@ object autojit extends ScalaModule{
     ivy"org.ow2.asm:asm:6.1.1",
     ivy"org.ow2.asm:asm-tree:6.1.1",
     ivy"org.ow2.asm:asm-analysis:6.1.1",
+    ivy"org.ow2.asm:asm-commons:6.1.1",
 
     ivy"com.lihaoyi::pprint:0.5.3"
   )

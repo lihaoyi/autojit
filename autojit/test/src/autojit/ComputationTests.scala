@@ -42,12 +42,12 @@ object ComputationTests extends TestSuite {
       )
     }
     'hello1 - {
-      val expr = Mul(Var(1), Var(0))
+      val expr = Mul(Var(1), Val(2))
       val determinant = expr.eval(Array(5, 6, 1))
       val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
       assert(
-        determinant == 30,
-        determinant2 == 30
+        determinant == 12,
+        determinant2 == 12
       )
     }
     'hello2 - {
