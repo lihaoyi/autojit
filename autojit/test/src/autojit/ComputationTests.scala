@@ -66,5 +66,27 @@ object ComputationTests extends TestSuite {
         determinant2 == 4
       )
     }
+    'hello3 - {
+      // (-b - sqrt(b^2 - 4ac)) / 2a, b = 10, a = 5, c = 17
+
+      val expr = Div(
+        Sub(
+          Mul(Val(-1), Var(1)),
+          UDF(
+            Sub(
+              Mul(Var(1), Var(1)),
+              Mul(Mul(Val(4), Var(0)), Var(2))),
+            math.sqrt(_).toInt
+          )
+        ),
+        Mul(Val(2), Var(0))
+      )
+      val determinant = expr.eval(Array(2, 5, -3))
+      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(2, 5, -3))
+      assert(
+        determinant == -3,
+        determinant2 == -3
+      )
+    }
   }
 }
