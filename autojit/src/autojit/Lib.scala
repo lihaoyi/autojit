@@ -39,7 +39,6 @@ object Lib {
               loadClass: Any => ClassNode): Unit = {
     println("Recurse " + self.getClass)
     println(methodName)
-    println(cn.methods.asScala.map(_.name))
     val mn = cn.methods.asScala.find(_.name == methodName).get
     val analyzer = new Analyzer(new Dataflow(true, isTrivial(cn, _), className))
     analyzer.analyze(cn.name, mn)
@@ -55,8 +54,10 @@ object Lib {
     var bufferedMethod: java.lang.reflect.Method = null
     var bufferedValue: AnyRef = null
     for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
+      pprint.log(insn)
       if (i + 1 < frames.length){
         val nextFrame = frames(i+1)
+        pprint.log(nextFrame)
         if (nextFrame != null){
 
           val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)

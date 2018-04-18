@@ -31,8 +31,26 @@ object Computation{
 object ComputationTests extends TestSuite {
 //  def main(args: Array[String]): Unit ={
   def tests = Tests{
-    'hello - {
-      import Computation._
+    import Computation._
+    'hello0 - {
+      val expr = Var(1)
+      val determinant = expr.eval(Array(5, 6, 1))
+      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
+      assert(
+        determinant == 6,
+        determinant2 == 6
+      )
+    }
+    'hello1 - {
+      val expr = Mul(Var(1), Var(0))
+      val determinant = expr.eval(Array(5, 6, 1))
+      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
+      assert(
+        determinant == 30,
+        determinant2 == 30
+      )
+    }
+    'hello2 - {
       // sqrt(b^2 - 4ac), b = 10, a = 5, c = 17
 
       val expr = UDF(
