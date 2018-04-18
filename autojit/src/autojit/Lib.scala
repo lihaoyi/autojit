@@ -172,7 +172,8 @@ object Lib {
     val cachedSelfIndices = mutable.Map.empty[Object, Int]
 
     recurse(
-      self, loadClass(self), method.getName, mainMethod,
+      self, loadClass(self), method.getName,
+      new InlineValidator(mainMethod, Type.getInternalName(superClass)),
       self =>
         if (cachedSelfPlaceholders.contains(self)) cachedSelfPlaceholders(self)
         else{
