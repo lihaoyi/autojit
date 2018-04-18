@@ -10,21 +10,24 @@ import scala.reflect.ClassTag
 
 object Lib {
   def isTrivial(cn: ClassNode, mins: MethodInsnNode) = {
+    cn.methods.asScala.find(m => m.name == mins.name && m.desc == mins.desc) match{
+      case None => false
+      case Some(mn) =>
 
-    val mn = cn.methods.asScala.find(m => m.name == mins.name && m.desc == mins.desc).get
-    val filtered = mn.instructions.iterator().asScala.toVector.filter{
-      case _: LabelNode => false
-      case _: LineNumberNode => false
-      case _ => true
-    }
+      val filtered = mn.instructions.iterator().asScala.toVector.filter{
+        case _: LabelNode => false
+        case _: LineNumberNode => false
+        case _ => true
+      }
 
-    filtered match {
-      case Seq(ins1: VarInsnNode, ins2: FieldInsnNode, ins3: InsnNode) =>
-        (ins1.`var` == 0 && ins1.getOpcode == Opcodes.ALOAD) &&
-        (ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN) &&
-        (mn.access & Opcodes.ACC_STATIC) == 0 &&
-        mins.desc.startsWith("()")
-      case _ => false
+      filtered match {
+        case Seq(ins1: VarInsnNode, ins2: FieldInsnNode, ins3: InsnNode) =>
+          (ins1.`var` == 0 && ins1.getOpcode == Opcodes.ALOAD) &&
+          (ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN) &&
+          (mn.access & Opcodes.ACC_STATIC) == 0 &&
+          mins.desc.startsWith("()")
+        case _ => false
+      }
     }
   }
 
@@ -48,6 +51,13 @@ object Lib {
       src <- f.getStack(b).inlineable
     } yield src
 
+    val inlinedSelfInsns = for{
+      f <- frames
+      if f != null
+      b <- 0 until f.getStackSize
+      (src, dest) <- f.getStack(b).concrete
+    } yield src
+
     var bufferedMethod: java.lang.reflect.Method = null
     var bufferedValue: AnyRef = null
     for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
@@ -58,7 +68,7 @@ object Lib {
         else {
 
           val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
-          if (nextFrameTop.self) () // do nothing
+          if (nextFrameTop.self.isDefined && inlinedSelfInsns.contains(insn)) () // do nothing
           else if (nextFrameTop.concrete.isDefined) {
             bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
             bufferedValue = bufferedMethod.invoke(self)

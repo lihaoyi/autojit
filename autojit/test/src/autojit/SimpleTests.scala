@@ -1,22 +1,22 @@
 package autojit
 import utest._
-sealed trait Expr{ def eval(): Int }
-object Expr{
-  case class Num(i: Int) extends Expr{ def eval() = i }
-  case class NumByte(i: Byte) extends Expr{ def eval() = i.toInt }
-  case class UDF(e: Expr, f: Int => Int) extends Expr{ def eval() = f(e.eval()) }
-  case class Add(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() + r.eval() }
-  case class Sub(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() - r.eval() }
-  case class Mul(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() * r.eval() }
-  case class Div(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() / r.eval() }
+sealed trait Simple{ def eval(): Int }
+object Simple{
+  case class Num(i: Int) extends Simple{ def eval() = i }
+  case class NumByte(i: Byte) extends Simple{ def eval() = i.toInt }
+  case class UDF(e: Simple, f: Int => Int) extends Simple{ def eval() = f(e.eval()) }
+  case class Add(l: Simple, r: Simple) extends Simple{ def eval() = l.eval() + r.eval() }
+  case class Sub(l: Simple, r: Simple) extends Simple{ def eval() = l.eval() - r.eval() }
+  case class Mul(l: Simple, r: Simple) extends Simple{ def eval() = l.eval() * r.eval() }
+  case class Div(l: Simple, r: Simple) extends Simple{ def eval() = l.eval() / r.eval() }
 }
 
 object SimpleTests extends TestSuite {
-  import Expr._
+  import Simple._
   def check0() = {
     val expr = Num(1)
     val determinant = expr.eval()
-    val determinant2 = Lib.devirtualize[Expr](expr, "eval").eval()
+    val determinant2 = Lib.devirtualize[Simple](expr, "eval").eval()
     assert(
       determinant == 1,
       determinant2 == 1
@@ -32,7 +32,7 @@ object SimpleTests extends TestSuite {
       math.sqrt(_).toInt
     )
     val determinant = expr.eval()
-    val determinant2 = Lib.devirtualize[Expr](expr, "eval").eval()
+    val determinant2 = Lib.devirtualize[Simple](expr, "eval").eval()
     assert(
       determinant == expected,
       determinant2 == expected
