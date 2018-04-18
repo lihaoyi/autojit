@@ -6,31 +6,8 @@ import org.objectweb.asm.tree._
 
 import collection.JavaConverters._
 import scala.collection.mutable
-sealed trait Expr{ def eval(): Int }
-object Expr{
-  case class Num(i: Int) extends Expr{ def eval() = i }
-  case class NumByte(i: Byte) extends Expr{ def eval() = i.toInt }
-  case class UDF(e: Expr, f: Int => Int) extends Expr{ def eval() = f(e.eval()) }
-  case class Add(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() + r.eval() }
-  case class Sub(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() - r.eval() }
-  case class Mul(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() * r.eval() }
-  case class Div(l: Expr, r: Expr) extends Expr{ def eval() = l.eval() / r.eval() }
-}
-object Main {
-  def main(args: Array[String]): Unit = {
-    import Expr._
-    // sqrt(b^2 - 4ac), b = 10, a = 5, c = 17
-    val (a, b, c) = (5, 6, 1)
-    val expr = UDF(
-      Sub(Mul(Num(b), Num(b)), Mul(Mul(NumByte(4), Num(a)), Num(c))),
-      math.sqrt(_).toInt
-    )
-    val determinant = expr.eval()
-    println("Hello World " + determinant)
-    val determinant2 = devirtualize(expr, "eval")()
-    println("Hello World Jitted " + determinant2)
-  }
 
+object Lib {
   def isTrivial(cn: ClassNode, mins: MethodInsnNode) = {
 
     val mn = cn.methods.asScala.find(m => m.name == mins.name && m.desc == mins.desc).get
@@ -40,7 +17,7 @@ object Main {
       case _ => true
     }
 
-    val res = filtered match {
+    filtered match {
       case Seq(ins1: VarInsnNode, ins2: FieldInsnNode, ins3: InsnNode) =>
         (ins1.`var` == 0 && ins1.getOpcode == Opcodes.ALOAD) &&
         (ins3.getOpcode >= Opcodes.IRETURN && ins3.getOpcode <= Opcodes.RETURN) &&
@@ -48,7 +25,6 @@ object Main {
         mins.desc.startsWith("()")
       case _ => false
     }
-    res
   }
 
 
@@ -193,7 +169,7 @@ object Main {
       java.nio.file.Paths.get("Hello.class"),
       transformedBytes
     )
-    val anon = unsafe.defineAnonymousClass(getClass, transformedBytes, patches)
+    val anon = unsafe.defineAnonymousClass(classOf[Function1[_, _]], transformedBytes, patches)
     () => anon.getMethod("main").invoke(null).asInstanceOf[Int]
   }
 }
