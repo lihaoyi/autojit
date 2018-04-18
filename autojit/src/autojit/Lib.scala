@@ -6,6 +6,7 @@ import org.objectweb.asm.tree._
 
 import collection.JavaConverters._
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 object Lib {
   def isTrivial(cn: ClassNode, mins: MethodInsnNode) = {
@@ -113,22 +114,56 @@ object Lib {
       }
     )
   }
-  def transform(self: Object, methodName: String) = {
+  def getDescriptorForClass(c: Class[_]) = {
+    if(c.isPrimitive()){
+      if(c == classOf[Byte]) "B"
+      else if(c == classOf[Char]) "C"
+      else if(c == classOf[Double]) "D"
+      else if(c == classOf[Float]) "F"
+      else if(c == classOf[Int]) "I"
+      else if(c == classOf[Long]) "J"
+      else if(c == classOf[Short]) "S"
+      else if(c == classOf[Boolean]) "Z"
+      else if(c == classOf[Unit]) "V"
+    }
+    else if(c.isArray()) c.getName().replace('.', '/')
+    else ('L'+c.getName()+';').replace('.', '/')
+  }
+
+  def getMethodDescriptor(m: java.lang.reflect.Method) = {
+    var s = "("
+    for(c <- m.getParameterTypes()) s+=getDescriptorForClass(c)
+    s += ')'
+    s + getDescriptorForClass(m.getReturnType())
+  }
+
+  def transform(self: Object, superClass: Class[_], method: java.lang.reflect.Method) = {
     val cw = new ClassWriter(0 /*ClassWriter.COMPUTE_MAXS*/)
 
     cw.visit(
       Opcodes.V1_8,
       Opcodes.ACC_PUBLIC,
-      "Hello",
+      "generated/Hello",
       null,
       Type.getInternalName(classOf[Object]),
-      null
+      Array(Type.getInternalName(superClass))
     )
 
+    val constructor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
+
+    constructor.visitCode()
+    constructor.visitVarInsn(Opcodes.ALOAD, 0)
+    constructor.visitMethodInsn(
+      Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false
+    )
+    constructor.visitInsn(Opcodes.RETURN)
+    constructor.visitMaxs(1,1)
+    constructor.visitEnd()
+
     val mainMethod = cw.visitMethod(
-      Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC,
-      "main",
-      "()I",
+      Opcodes.ACC_PUBLIC,
+      method.getName,
+      getMethodDescriptor(method),
       null,
       null
     )
@@ -137,7 +172,7 @@ object Lib {
     val cachedSelfIndices = mutable.Map.empty[Object, Int]
 
     recurse(
-      self, loadClass(self), methodName, mainMethod,
+      self, loadClass(self), method.getName, mainMethod,
       self =>
         if (cachedSelfPlaceholders.contains(self)) cachedSelfPlaceholders(self)
         else{
@@ -158,9 +193,13 @@ object Lib {
     (cw.toByteArray, patches)
   }
 
-  def devirtualize(interpreted: Object, entrypoint: String): () => Int = {
+  def devirtualize[T: ClassTag](interpreted: T, entrypoint: String): T = {
 
-    val (transformedBytes, patches) = transform(interpreted, entrypoint)
+    val (transformedBytes, patches) = transform(
+      interpreted.asInstanceOf[AnyRef],
+      implicitly[ClassTag[T]].runtimeClass,
+      implicitly[ClassTag[T]].runtimeClass.getMethods.find(_.getName == entrypoint).get
+    )
 
     val field = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
     field.setAccessible(true)
@@ -170,7 +209,7 @@ object Lib {
       transformedBytes
     )
     val anon = unsafe.defineAnonymousClass(classOf[Function1[_, _]], transformedBytes, patches)
-    () => anon.getMethod("main").invoke(null).asInstanceOf[Int]
+    anon.newInstance().asInstanceOf[T]
   }
 }
 

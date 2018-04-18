@@ -13,7 +13,10 @@ object Main {
     val doneMessages = frameworks.map { framework =>
       val runner = framework.runner(args, args, getClass.getClassLoader)
 
-      val testClasses = Seq(SimpleTests.getClass -> frameworks(0).fingerprints().head)
+      val testClasses = Seq(
+        SimpleTests.getClass -> frameworks(0).fingerprints().head,
+        ComputationTests.getClass -> frameworks(0).fingerprints().head
+      )
 
       val tasks = runner.tasks(
         for ((cls, fingerprint) <- testClasses.toArray)
