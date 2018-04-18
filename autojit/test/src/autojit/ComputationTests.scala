@@ -87,6 +87,32 @@ object ComputationTests extends TestSuite {
         determinant == -3,
         determinant2 == -3
       )
+
+//      var total = 0
+//      val input = Array(2, 5, -3)
+//      val start1 = System.currentTimeMillis()
+//      var count1 = 0
+//      while(System.currentTimeMillis() - start1 < 10000){
+//        total += expr.eval(input)
+//        total += expr.eval(input)
+//        total += expr.eval(input)
+//        total += expr.eval(input)
+//        total += expr.eval(input)
+//        count1 += 1
+//      }
+//
+//      val jitted = Lib.devirtualize[Computation](expr, "eval")
+//      val start2 = System.currentTimeMillis()
+//      var count2 = 0
+//      while(System.currentTimeMillis() - start2 < 10000){
+//        total += jitted.eval(input)
+//        total += jitted.eval(input)
+//        total += jitted.eval(input)
+//        total += jitted.eval(input)
+//        total += jitted.eval(input)
+//        count2 += 1
+//      }
+//      (count1, count2, total)
     }
   }
 }

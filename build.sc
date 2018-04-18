@@ -14,5 +14,9 @@ object autojit extends ScalaModule{
     def ivyDeps = Agg(ivy"com.lihaoyi::utest::0.6.4")
     def testFrameworks = Seq("utest.runner.Framework")
   }
-//  def forkArgs = Seq("-Xverify:none")
+//  def forkArgs = Seq(
+//    "-Xverify:none"
+//    "-XX:+UnlockDiagnosticVMOptions",
+//    "-XX:+PrintOptoAssembly"
+//  )
 }
