@@ -51,9 +51,11 @@ object Lib {
     var bufferedMethod: java.lang.reflect.Method = null
     var bufferedValue: AnyRef = null
     for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
-      if (i + 1 < frames.length){
+      if (i + 1 == frames.length) insn.accept(out)
+      else{
         val nextFrame = frames(i+1)
-        if (nextFrame != null){
+        if (nextFrame == null) insn.accept(out)
+        else {
 
           val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
           if (nextFrameTop.self) () // do nothing
@@ -104,7 +106,7 @@ object Lib {
   }
 
   def transform(self: Object, superClass: Class[_], method: java.lang.reflect.Method) = {
-    val cw = new ClassWriter(0 /*ClassWriter.COMPUTE_MAXS*/)
+    val cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES)
 
     cw.visit(
       Opcodes.V1_8,
@@ -123,7 +125,7 @@ object Lib {
       Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false
     )
     constructor.visitInsn(Opcodes.RETURN)
-    constructor.visitMaxs(1,1)
+    constructor.visitMaxs(-1, -1)
     constructor.visitEnd()
 
     val cachedSelfPlaceholders = mutable.Map.empty[Object, String]
@@ -140,11 +142,9 @@ object Lib {
           res.read(rawBytes)
           res.close()
           val cr = new ClassReader(rawBytes)
-          val cw = new ClassWriter(0)
           val cn = new ClassNode()
           cr.accept(cn, 0)
           cn
-
         }
       )
     }
@@ -156,7 +156,7 @@ object Lib {
       f => {
         val methodName = method.getName + (if (methodCount == 0) "" else methodCount)
         val mainMethod = cw.visitMethod(
-          Opcodes.ACC_PUBLIC,
+          Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL,
           methodName,
           getMethodDescriptor(method),
           null,
@@ -165,8 +165,7 @@ object Lib {
         methodCount += 1
         f(new InlineValidator(mainMethod, superClassName))
 
-        mainMethod.visitInsn(Opcodes.IRETURN)
-        mainMethod.visitMaxs(100, 100)
+        mainMethod.visitMaxs(-1, -1)
         mainMethod.visitEnd()
         methodName
       },
