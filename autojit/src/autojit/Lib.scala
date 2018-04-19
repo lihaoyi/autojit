@@ -39,59 +39,99 @@ object Lib {
               withOut: (MethodVisitor => Unit) => String,
               newConst: Object => Any,
               loadClass: Any => ClassNode): String = withOut{ out =>
-    val mn = cn.methods.asScala.find(_.name == methodName).get
-    val analyzer = new Analyzer(new Dataflow(true, isTrivial(cn, _), className))
-    analyzer.analyze(cn.name, mn)
-    val frames = analyzer.getFrames
+    self match{
+      case self: Intrinsics.Foreach[_] =>
+        val mn = cn.methods.asScala.find(_.name == methodName).get
+        val method = self.getClass.getMethods.find(_.getName == methodName).get
+        for(item <- self.items){
+          for((p, i) <- method.getParameterTypes.zipWithIndex){
 
-    val inlinedConcreteInsns = for{
-      f <- frames
-      if f != null
-      b <- 0 until f.getStackSize
-      src <- f.getStack(b).inlineable
-    } yield src
-
-    var bufferedMethod: java.lang.reflect.Method = null
-    var bufferedValue: AnyRef = null
-    for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
-      if (i + 1 == frames.length) insn.accept(out)
-      else{
-        val nextFrame = frames(i+1)
-        if (nextFrame == null) insn.accept(out)
-        else {
-          val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
-          if (nextFrameTop.self.isDefined) () // do nothing
-          else if (nextFrameTop.concrete.isDefined) {
-            bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
-            bufferedValue = bufferedMethod.invoke(self)
-            if (inlinedConcreteInsns.contains(insn)) () // do nothing
-            else if (bufferedMethod.getReturnType.isPrimitive) out.visitLdcInsn(bufferedValue)
-            else{
-              out.visitLdcInsn(newConst(bufferedValue))
-              out.visitTypeInsn(
-                Opcodes.CHECKCAST,
-                Type.getType(bufferedMethod).getReturnType.getDescriptor
-              )
+            p match{
+              case p if p == classOf[Boolean] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Char] => out.visitVarInsn(Opcodes.LLOAD, i)
+              case p if p == classOf[Byte] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Short] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Int] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Long] => out.visitVarInsn(Opcodes.LLOAD, i)
+              case p if p == classOf[Float] => out.visitVarInsn(Opcodes.FLOAD, i)
+              case p if p == classOf[Double] => out.visitVarInsn(Opcodes.DLOAD, i)
+              case p  => out.visitVarInsn(Opcodes.ALOAD, i)
             }
-          }else if (nextFrameTop.inlineable.isDefined) {
-            val subMethodName = recurse(bufferedValue, loadClass(bufferedValue), methodName, className, withOut, newConst, loadClass)
-            out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
-          }else if (nextFrameTop.fromSelf.isDefined) {
-            throw new Exception("Non-inlined self reference slipped through")
-          }
-          else {
 
-            insn.accept(
-              new MethodVisitor(Opcodes.ASM6, out) {
-                override def visitVarInsn(opcode: Int, `var`: Int): Unit = {
-                  super.visitVarInsn(opcode, `var` - 1)
+          }
+          val subMethodName = recurse(item, loadClass(item), methodName, className, withOut, newConst, loadClass)
+          out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
+
+        }
+        method.getReturnType match{
+          case p if p == classOf[Boolean] => out.visitInsn(Opcodes.IRETURN)
+          case p if p == classOf[Char] => out.visitInsn(Opcodes.IRETURN)
+          case p if p == classOf[Byte] => out.visitInsn(Opcodes.IRETURN)
+          case p if p == classOf[Short] => out.visitInsn(Opcodes.IRETURN)
+          case p if p == classOf[Int] => out.visitInsn(Opcodes.IRETURN)
+          case p if p == classOf[Long] => out.visitInsn(Opcodes.LRETURN)
+          case p if p == classOf[Float] => out.visitInsn(Opcodes.FRETURN)
+          case p if p == classOf[Double] => out.visitInsn(Opcodes.DRETURN)
+          case p if p == classOf[Unit] => out.visitInsn(Opcodes.RETURN)
+          case p  => out.visitInsn(Opcodes.ARETURN)
+        }
+
+      case _ =>
+        val mn = cn.methods.asScala.find(_.name == methodName).get
+        val analyzer = new Analyzer(new Dataflow(true, isTrivial(cn, _), className))
+        analyzer.analyze(cn.name, mn)
+        val frames = analyzer.getFrames
+
+        val inlinedConcreteInsns = for{
+          f <- frames
+          if f != null
+          b <- 0 until f.getStackSize
+          src <- f.getStack(b).inlineable
+        } yield src
+
+        var bufferedMethod: java.lang.reflect.Method = null
+        var bufferedValue: AnyRef = null
+        for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
+          if (i + 1 == frames.length) insn.accept(out)
+          else{
+            val nextFrame = frames(i+1)
+            if (nextFrame == null) insn.accept(out)
+            else {
+              val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
+              if (nextFrameTop.self.isDefined) () // do nothing
+              else if (nextFrameTop.concrete.isDefined) {
+                bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
+                bufferedValue = bufferedMethod.invoke(self)
+                if (inlinedConcreteInsns.contains(insn)) () // do nothing
+                else if (bufferedMethod.getReturnType.isPrimitive) out.visitLdcInsn(bufferedValue)
+                else{
+                  out.visitLdcInsn(newConst(bufferedValue))
+                  out.visitTypeInsn(
+                    Opcodes.CHECKCAST,
+                    Type.getType(bufferedMethod).getReturnType.getDescriptor
+                  )
                 }
+              }else if (nextFrameTop.inlineable.isDefined) {
+                val subMethodName = recurse(bufferedValue, loadClass(bufferedValue), methodName, className, withOut, newConst, loadClass)
+                out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
+              }else if (nextFrameTop.fromSelf.isDefined) {
+                throw new Exception("Non-inlined self reference slipped through")
               }
-            )
+              else {
+
+                insn.accept(
+                  new MethodVisitor(Opcodes.ASM6, out) {
+                    override def visitVarInsn(opcode: Int, `var`: Int): Unit = {
+                      super.visitVarInsn(opcode, `var` - 1)
+                    }
+                  }
+                )
+              }
+            }
           }
         }
-      }
     }
+
   }
 
   def getDescriptorForClass(c: Class[_]) = {
@@ -200,6 +240,7 @@ object Lib {
       case p if p == classOf[Long] => mainMethod.visitInsn(Opcodes.LRETURN)
       case p if p == classOf[Float] => mainMethod.visitInsn(Opcodes.FRETURN)
       case p if p == classOf[Double] => mainMethod.visitInsn(Opcodes.DRETURN)
+      case p if p == classOf[Unit] => mainMethod.visitInsn(Opcodes.RETURN)
       case p  => mainMethod.visitInsn(Opcodes.ARETURN)
     }
     mainMethod.visitLabel(end)
