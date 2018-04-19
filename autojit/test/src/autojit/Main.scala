@@ -16,7 +16,8 @@ object Main {
       val testClasses = Seq(
         SimpleTests.getClass -> frameworks(0).fingerprints().head,
         ComputationTests.getClass -> frameworks(0).fingerprints().head,
-        FailureTests.getClass -> frameworks(0).fingerprints().head
+        FailureTests.getClass -> frameworks(0).fingerprints().head,
+        BFTests.getClass -> frameworks(0).fingerprints().head
       )
 
       val tasks = runner.tasks(
