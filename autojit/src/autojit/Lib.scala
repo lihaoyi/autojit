@@ -1,8 +1,11 @@
 package autojit
 
+import java.io.{PrintWriter, StringWriter}
+
 import org.objectweb.asm._
 import org.objectweb.asm.tree._
 import org.objectweb.asm.tree.analysis.Analyzer
+import org.objectweb.asm.util.{Textifier, TraceMethodVisitor}
 
 import collection.JavaConverters._
 import scala.collection.mutable
@@ -30,7 +33,6 @@ object Lib {
       }
     }
   }
-
 
   def recurse(self: Object,
               cn: ClassNode,
@@ -78,26 +80,23 @@ object Lib {
 
       case _ =>
         val mn = cn.methods.asScala.find(_.name == methodName).get
-        val analyzer = new Analyzer(new Dataflow(true, isTrivial(cn, _), className))
+        val df = new Dataflow(false, isTrivial(cn, _), className)
+        val analyzer = new Analyzer(df)
         analyzer.analyze(cn.name, mn)
         val frames = analyzer.getFrames
 
         val inlinedConcreteInsns = for{
-          f <- frames
-          if f != null
-          b <- 0 until f.getStackSize
-          src <- f.getStack(b).inlineable
+          (_, box) <- df.metadata.toSet
+          src <- box.inlineable
         } yield src
 
         var bufferedMethod: java.lang.reflect.Method = null
         var bufferedValue: AnyRef = null
         for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
-          if (i + 1 == frames.length) insn.accept(out)
-          else{
-            val nextFrame = frames(i+1)
-            if (nextFrame == null) insn.accept(out)
-            else {
-              val nextFrameTop = nextFrame.getStack(nextFrame.getStackSize-1)
+
+          df.metadata.get(insn) match{
+            case None => insn.accept(out)
+            case Some(nextFrameTop) =>
               if (nextFrameTop.self.isDefined) () // do nothing
               else if (nextFrameTop.concrete.isDefined) {
                 bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
@@ -127,8 +126,8 @@ object Lib {
                   }
                 )
               }
-            }
           }
+
         }
     }
 
@@ -177,7 +176,7 @@ object Lib {
       Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false
     )
     constructor.visitInsn(Opcodes.RETURN)
-    constructor.visitMaxs(-1, -1)
+    constructor.visitMaxs(100, 100)
     constructor.visitEnd()
 
     val cachedSelfPlaceholders = mutable.Map.empty[Object, String]
@@ -261,7 +260,11 @@ object Lib {
           null
         )
         methodCount += 1
-        f(new InlineValidator(newMethod, superClassName))
+        val textifier = new Textifier()
+        f(new InlineValidator(new TraceMethodVisitor(newMethod, textifier), superClassName))
+//        val pw = new PrintWriter(System.out)
+//        textifier.print(pw)
+//        pw.flush()
 
         newMethod.visitMaxs(-1, -1)
         newMethod.visitEnd()

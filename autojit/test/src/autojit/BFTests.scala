@@ -45,7 +45,7 @@ case class Print() extends BFNode {
     if (output != null) output.append(tape.read().toChar)
   }
 }
-case class Loop(children: Block)extends BFNode {
+case class Loop(children: BFNode) extends BFNode {
   def apply(tape: Tape, output: StringBuffer) = {
     while (tape.read() != 0) {
       children.apply(tape, output)
@@ -137,41 +137,41 @@ object BFTests extends TestSuite{
         Lib.devirtualize[BFNode](structured, "apply").apply(tape, output)
         output.toString
       }
-      'perf - {
-        val start1 = System.currentTimeMillis()
-        var count1 = 0
-        while(System.currentTimeMillis() - start1 < 10000){
-          structured.apply(new Tape(), null)
-          structured.apply(new Tape(), null)
-          structured.apply(new Tape(), null)
-          structured.apply(new Tape(), null)
-          structured.apply(new Tape(), null)
-          count1 += 1
-        }
-
-        val jitted = Lib.devirtualize[BFNode](structured, "apply")
-        val start2 = System.currentTimeMillis()
-        var count2 = 0
-        while(System.currentTimeMillis() - start2 < 10000){
-          jitted.apply(new Tape(), null)
-          jitted.apply(new Tape(), null)
-          jitted.apply(new Tape(), null)
-          jitted.apply(new Tape(), null)
-          jitted.apply(new Tape(), null)
-          count2 += 1
-        }
-        val start3 = System.currentTimeMillis()
-        var count3 = 0
-        while(System.currentTimeMillis() - start3 < 10000){
-          direct(insns, new Tape(), null, jumpTargets)
-          direct(insns, new Tape(), null, jumpTargets)
-          direct(insns, new Tape(), null, jumpTargets)
-          direct(insns, new Tape(), null, jumpTargets)
-          direct(insns, new Tape(), null, jumpTargets)
-          count3 += 1
-        }
-        (count1, count2, count3)
-      }
+//      'perf - {
+//        val start1 = System.currentTimeMillis()
+//        var count1 = 0
+//        while(System.currentTimeMillis() - start1 < 10000){
+//          structured.apply(new Tape(), null)
+//          structured.apply(new Tape(), null)
+//          structured.apply(new Tape(), null)
+//          structured.apply(new Tape(), null)
+//          structured.apply(new Tape(), null)
+//          count1 += 1
+//        }
+//
+//        val jitted = Lib.devirtualize[BFNode](structured, "apply")
+//        val start2 = System.currentTimeMillis()
+//        var count2 = 0
+//        while(System.currentTimeMillis() - start2 < 10000){
+//          jitted.apply(new Tape(), null)
+//          jitted.apply(new Tape(), null)
+//          jitted.apply(new Tape(), null)
+//          jitted.apply(new Tape(), null)
+//          jitted.apply(new Tape(), null)
+//          count2 += 1
+//        }
+//        val start3 = System.currentTimeMillis()
+//        var count3 = 0
+//        while(System.currentTimeMillis() - start3 < 10000){
+//          direct(insns, new Tape(), null, jumpTargets)
+//          direct(insns, new Tape(), null, jumpTargets)
+//          direct(insns, new Tape(), null, jumpTargets)
+//          direct(insns, new Tape(), null, jumpTargets)
+//          direct(insns, new Tape(), null, jumpTargets)
+//          count3 += 1
+//        }
+//        (count1, count2, count3)
+//      }
     }
   }
 }
