@@ -23,6 +23,16 @@ object SimpleTests extends TestSuite {
     )
 
   }
+  def check1() = {
+    val expr = Mul(Num(3), Num(2))
+    val determinant = expr.eval()
+    val determinant2 = Lib.devirtualize[Simple](expr, "eval").eval()
+    assert(
+      determinant == 6,
+      determinant2 == 6
+    )
+
+  }
   def check(a: Int, b: Int, c: Int, expected: Int) = {
     // sqrt(b^2 - 4ac), b = 10, a = 5, c = 17
     val expr = UDF(
@@ -41,8 +51,9 @@ object SimpleTests extends TestSuite {
   }
   def tests = Tests{
     'hello0 - check0()
-    'hello1 - check(5, 6, 1, 4)
-    'hello2 - check(2, 5, 3, 1)
-    'hello3 - check(1, 4, 4, 0)
+    'hello1 - check1()
+    'hello2 - check(5, 6, 1, 4)
+    'hello3 - check(2, 5, 3, 1)
+    'hello4 - check(1, 4, 4, 0)
   }
 }

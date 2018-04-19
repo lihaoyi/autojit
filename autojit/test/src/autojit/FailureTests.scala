@@ -17,9 +17,10 @@ object FailureTests extends TestSuite {
   import Failure._
   def tests = Tests{
     'hello0 - {
-      intercept[java.lang.NoClassDefFoundError]{
+      val ex = intercept[java.lang.Exception]{
         Lib.devirtualize[Failure](Num(1), "eval").eval()
       }
+      assert(ex.getMessage == "Non-inlined self reference slipped through")
     }
   }
 }
