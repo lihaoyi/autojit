@@ -18,7 +18,8 @@ object Main {
         ComputationTests.getClass -> frameworks(0).fingerprints().head,
         FailureTests.getClass -> frameworks(0).fingerprints().head,
         BFTests.getClass -> frameworks(0).fingerprints().head,
-        IntrTests.getClass -> frameworks(0).fingerprints().head
+        IntrTests.getClass -> frameworks(0).fingerprints().head,
+        SchemeTests.getClass -> frameworks(0).fingerprints().head
       )
 
       val tasks = runner.tasks(
