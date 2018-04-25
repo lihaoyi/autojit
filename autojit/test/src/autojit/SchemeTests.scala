@@ -8,8 +8,9 @@ object SchemeTests extends TestSuite{
   sealed trait Value
   object Value{
     case class Null() extends Value
+    case class Arr(values: Seq[Value]) extends Value
     case class Num(i: Int) extends Value
-    case class Lambda(f: Expr.Lambda, ctx: Array[Value]) extends Value
+    case class Lambda(bindings: Seq[Int], eval: Array[Value] => Value, ctx: Array[Value]) extends Value
   }
   sealed trait Expr{
     def eval(ctx: Array[Value]): Value
@@ -38,24 +39,27 @@ object SchemeTests extends TestSuite{
     }
     case class If(a: Expr, b: Expr, c: Expr) extends Expr{
       def eval(ctx: Array[Value]) = {
-        val p = a.eval(ctx)
-        val res = if (p != Value.Num(0)) b.eval(ctx) else c.eval(ctx)
-        res
+        if (a.eval(ctx) != Value.Num(0)) b.eval(ctx) else c.eval(ctx)
       }
     }
-    case class Apply(items: IndexedSeq[Expr]) extends Expr{
+    case class Apply(f: Expr, items: Expr) extends Expr{
       def eval(ctx: Array[Value]) = {
-        val f = items(0).eval(ctx).asInstanceOf[Value.Lambda]
-        val newCtx = f.ctx.clone()
-        for((b, i) <- f.f.bindings.zipWithIndex){
-          val value = items(i + 1).eval(ctx)
-          newCtx(b) = value
+        val funcValue = f.eval(ctx).asInstanceOf[Value.Lambda]
+        val newCtx = funcValue.ctx.clone()
+        val args = items.eval(ctx).asInstanceOf[Value.Arr].values
+        for((b, i) <- funcValue.bindings.zipWithIndex){
+          newCtx(b) = args(i)
         }
-        f.f.body.eval(newCtx)
+        funcValue.eval(newCtx)
       }
+    }
+    case class ApplyArgs(items: IndexedSeq[Expr])
+      extends Expr with Intrinsics.Mapped[Expr, Value]{
+      def eval(ctx: Array[Value]) = wrap(items.toArray.map(_.eval(ctx)))
+      def wrap(t: Array[Value]) = Value.Arr(t)
     }
     case class Lambda(bindings: Seq[Int], body: Expr) extends Expr{
-      def eval(ctx: Array[Value]) = Value.Lambda(this, ctx)
+      def eval(ctx: Array[Value]) = Value.Lambda(bindings, x => body.eval(x), ctx)
     }
   }
 
@@ -95,7 +99,12 @@ object SchemeTests extends TestSuite{
           val popped = stack.remove(stack.length - 1)
           stack.last.append(
             if (popped.head == Expr.Ident(mapping("lambda"))) {
-              Expr.Lambda(popped(1).asInstanceOf[Expr.Apply].items.map(_.asInstanceOf[Expr.Ident].i), popped(2))
+              Expr.Lambda(
+                popped(1).asInstanceOf[Expr.Apply].items
+                         .asInstanceOf[Expr.ApplyArgs].items
+                         .map(_.asInstanceOf[Expr.Ident].i),
+                popped(2)
+              )
             } else if (popped.head == Expr.Ident(mapping("+"))) {
               Expr.Add(popped(1), popped(2))
             } else if (popped.head == Expr.Ident(mapping("-"))) {
@@ -105,7 +114,7 @@ object SchemeTests extends TestSuite{
             } else if (popped.head == Expr.Ident(mapping("zero?"))) {
               Expr.Zero(popped(1))
             } else {
-              Expr.Apply(popped)
+              Expr.Apply(popped(0), Expr.ApplyArgs(popped.drop(1)))
             }
           )
         }
@@ -115,6 +124,7 @@ object SchemeTests extends TestSuite{
     }
     def eval(str: String) = {
       val (locals, expr) = parse(str)
+      Lib.devirtualize[Expr](expr, "eval")
       expr.eval(Array.fill(locals)(Value.Null()))
     }
     'literal - {

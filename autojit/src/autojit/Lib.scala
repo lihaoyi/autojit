@@ -42,6 +42,57 @@ object Lib {
               newConst: Object => Any,
               loadClass: Any => ClassNode): String = withOut{ out =>
     self match{
+      case self: Intrinsics.Mapped[_, _] =>
+        val mn = cn.methods.asScala.find(_.name == methodName).get
+        val method = self.getClass.getMethods.find(_.getName == methodName).get
+
+        out.visitTypeInsn(Opcodes.ANEWARRAY, Type.getInternalName(method.getReturnType))
+        for((item, itemIndex) <- self.items.zipWithIndex){
+          out.visitIntInsn(Opcodes.SIPUSH, itemIndex)
+
+          for((p, i) <- method.getParameterTypes.zipWithIndex){
+
+            p match{
+              case p if p == classOf[Boolean] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Char] => out.visitVarInsn(Opcodes.LLOAD, i)
+              case p if p == classOf[Byte] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Short] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Int] => out.visitVarInsn(Opcodes.ILOAD, i)
+              case p if p == classOf[Long] => out.visitVarInsn(Opcodes.LLOAD, i)
+              case p if p == classOf[Float] => out.visitVarInsn(Opcodes.FLOAD, i)
+              case p if p == classOf[Double] => out.visitVarInsn(Opcodes.DLOAD, i)
+              case p  => out.visitVarInsn(Opcodes.ALOAD, i)
+            }
+
+          }
+          val subMethodName = recurse(item, loadClass(item), methodName, className, withOut, newConst, loadClass)
+          out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
+
+        }
+        method.getReturnType match{
+          case p if p == classOf[Boolean] => out.visitInsn(Opcodes.BASTORE)
+          case p if p == classOf[Char] => out.visitInsn(Opcodes.CASTORE)
+          case p if p == classOf[Byte] => out.visitInsn(Opcodes.BASTORE)
+          case p if p == classOf[Short] => out.visitInsn(Opcodes.SASTORE)
+          case p if p == classOf[Int] => out.visitInsn(Opcodes.IASTORE)
+          case p if p == classOf[Long] => out.visitInsn(Opcodes.LASTORE)
+          case p if p == classOf[Float] => out.visitInsn(Opcodes.FASTORE)
+          case p if p == classOf[Double] => out.visitInsn(Opcodes.DASTORE)
+          case p if p == classOf[Unit] => ???
+          case p  => out.visitInsn(Opcodes.AASTORE)
+        }
+
+        out.visitVarInsn(Opcodes.ASTORE, 0)
+        for (wrapInsn <- cn.methods.asScala.find(_.name == "wrap").get.instructions.iterator().asScala.drop(1)){
+          wrapInsn.accept(
+            new MethodVisitor(Opcodes.ASM6, out) {
+              override def visitVarInsn(opcode: Int, `var`: Int): Unit = {
+                super.visitVarInsn(opcode, `var` - 1)
+              }
+            }
+          )
+        }
+
       case self: Intrinsics.Foreach[_] =>
         val mn = cn.methods.asScala.find(_.name == methodName).get
         val method = self.getClass.getMethods.find(_.getName == methodName).get
@@ -262,9 +313,9 @@ object Lib {
         methodCount += 1
         val textifier = new Textifier()
         f(new InlineValidator(new TraceMethodVisitor(newMethod, textifier), superClassName))
-//        val pw = new PrintWriter(System.out)
-//        textifier.print(pw)
-//        pw.flush()
+        val pw = new PrintWriter(System.out)
+        textifier.print(pw)
+        pw.flush()
 
         newMethod.visitMaxs(-1, -1)
         newMethod.visitEnd()
