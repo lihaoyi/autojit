@@ -72,6 +72,14 @@ class Dataflow(mergeLeft: Boolean,
     res
   }
   def naryOperation(insn: AIN, vs: java.util.List[_ <: Box]) = (insn, insn.getOpcode) match {
+    case (i: MethodInsnNode, Opcodes.INVOKEVIRTUAL) if i.name == "handle" =>
+      val res = Box(
+        internal.naryOperation(insn, vs.asScala.map(_.value).asJava),
+        fromSelf = None
+      )
+
+      metadata(insn) = res
+      res
     case (mins: MethodInsnNode, Opcodes.INVOKEVIRTUAL)
       if isTrivial(mins) && vs.get(0).self.isDefined =>
       val res = Box(

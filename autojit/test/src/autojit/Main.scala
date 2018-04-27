@@ -14,8 +14,8 @@ object Main {
       val runner = framework.runner(args, args, getClass.getClassLoader)
 
       val testClasses = Seq(
-        SimpleTests.getClass -> frameworks(0).fingerprints().head,
-        ComputationTests.getClass -> frameworks(0).fingerprints().head,
+        CalcTests.getClass -> frameworks(0).fingerprints().head,
+        ArgTests.getClass -> frameworks(0).fingerprints().head,
         FailureTests.getClass -> frameworks(0).fingerprints().head,
         BFTests.getClass -> frameworks(0).fingerprints().head,
         IntrTests.getClass -> frameworks(0).fingerprints().head,

@@ -1,6 +1,7 @@
 package autojit
 
 import java.io.{PrintWriter, StringWriter}
+import java.lang.invoke.{MethodHandles, MethodType}
 
 import org.objectweb.asm._
 import org.objectweb.asm.tree._
@@ -33,7 +34,6 @@ object Lib {
       }
     }
   }
-
   def recurse(self: Object,
               cn: ClassNode,
               methodName: String,
@@ -42,12 +42,84 @@ object Lib {
               newConst: Object => Any,
               loadClass: Any => ClassNode): String = withOut{ out =>
     self match{
+      case self: Intrinsics.Lambda[_] =>
+        val mn = cn.methods.asScala.find(_.name == methodName).get
+        val df = new Dataflow(false, isTrivial(cn, _), className)
+        val analyzer = new Analyzer(df)
+        analyzer.analyze(cn.name, mn)
+        val frames = analyzer.getFrames
+
+        val inlinedConcreteInsns = for{
+          (_, box) <- df.metadata.toSet
+          src <- box.inlineable
+        } yield src
+        val bodyMethodName = recurse(self.body, loadClass(self.body), methodName, className, withOut, newConst, loadClass)
+        var bufferedMethod: java.lang.reflect.Method = null
+        var bufferedValue: AnyRef = null
+        for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
+
+          val tt = new Textifier()
+//          insn.accept(new TraceMethodVisitor(tt))
+//          val pw = new PrintWriter(System.out)
+//          tt.print(pw)
+//          pw.flush()
+//          println(df.metadata.get(insn))
+          insn match{
+            case i: MethodInsnNode if i.name == "handle" =>
+              out.visitLdcInsn(new org.objectweb.asm.Handle(
+                Opcodes.H_INVOKESTATIC,
+                "generated/Hello",
+                bodyMethodName,
+                mn.desc,
+                false
+              ))
+            case _ =>
+              df.metadata.get(insn) match{
+                case None => insn.accept(out)
+                case Some(nextFrameTop) =>
+                  if (nextFrameTop.self.isDefined) () // do nothing
+                  else if (nextFrameTop.concrete.isDefined) {
+                    bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
+                    bufferedValue = bufferedMethod.invoke(self)
+                    if (inlinedConcreteInsns.contains(insn)) () // do nothing
+                    else if (bufferedMethod.getReturnType.isPrimitive) out.visitLdcInsn(bufferedValue)
+                    else{
+                      out.visitLdcInsn(newConst(bufferedValue))
+                      out.visitTypeInsn(
+                        Opcodes.CHECKCAST,
+                        Type.getType(bufferedMethod).getReturnType.getDescriptor
+                      )
+                    }
+                  }else if (nextFrameTop.inlineable.isDefined) {
+                    val subMethodName = recurse(bufferedValue, loadClass(bufferedValue), methodName, className, withOut, newConst, loadClass)
+                    out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
+                  }else if (nextFrameTop.fromSelf.isDefined) {
+                    throw new Exception("Non-inlined self reference slipped through")
+                  }
+                  else {
+
+                    insn.accept(
+                      new MethodVisitor(Opcodes.ASM6, out) {
+                        override def visitVarInsn(opcode: Int, `var`: Int): Unit = {
+                          super.visitVarInsn(opcode, `var` - 1)
+                        }
+                      }
+                    )
+                  }
+              }
+
+          }
+
+        }
+
       case self: Intrinsics.Mapped[_, _] =>
         val mn = cn.methods.asScala.find(_.name == methodName).get
         val method = self.getClass.getMethods.find(_.getName == methodName).get
 
+        out.visitIntInsn(Opcodes.SIPUSH, self.items.length)
         out.visitTypeInsn(Opcodes.ANEWARRAY, Type.getInternalName(method.getReturnType))
         for((item, itemIndex) <- self.items.zipWithIndex){
+          out.visitInsn(Opcodes.DUP)
           out.visitIntInsn(Opcodes.SIPUSH, itemIndex)
 
           for((p, i) <- method.getParameterTypes.zipWithIndex){
@@ -68,18 +140,18 @@ object Lib {
           val subMethodName = recurse(item, loadClass(item), methodName, className, withOut, newConst, loadClass)
           out.visitMethodInsn(Opcodes.INVOKESTATIC, "generated/Hello", subMethodName, mn.desc, false)
 
-        }
-        method.getReturnType match{
-          case p if p == classOf[Boolean] => out.visitInsn(Opcodes.BASTORE)
-          case p if p == classOf[Char] => out.visitInsn(Opcodes.CASTORE)
-          case p if p == classOf[Byte] => out.visitInsn(Opcodes.BASTORE)
-          case p if p == classOf[Short] => out.visitInsn(Opcodes.SASTORE)
-          case p if p == classOf[Int] => out.visitInsn(Opcodes.IASTORE)
-          case p if p == classOf[Long] => out.visitInsn(Opcodes.LASTORE)
-          case p if p == classOf[Float] => out.visitInsn(Opcodes.FASTORE)
-          case p if p == classOf[Double] => out.visitInsn(Opcodes.DASTORE)
-          case p if p == classOf[Unit] => ???
-          case p  => out.visitInsn(Opcodes.AASTORE)
+          method.getReturnType match{
+            case p if p == classOf[Boolean] => out.visitInsn(Opcodes.BASTORE)
+            case p if p == classOf[Char] => out.visitInsn(Opcodes.CASTORE)
+            case p if p == classOf[Byte] => out.visitInsn(Opcodes.BASTORE)
+            case p if p == classOf[Short] => out.visitInsn(Opcodes.SASTORE)
+            case p if p == classOf[Int] => out.visitInsn(Opcodes.IASTORE)
+            case p if p == classOf[Long] => out.visitInsn(Opcodes.LASTORE)
+            case p if p == classOf[Float] => out.visitInsn(Opcodes.FASTORE)
+            case p if p == classOf[Double] => out.visitInsn(Opcodes.DASTORE)
+            case p if p == classOf[Unit] => ???
+            case p  => out.visitInsn(Opcodes.AASTORE)
+          }
         }
 
         out.visitVarInsn(Opcodes.ASTORE, 0)
@@ -313,9 +385,9 @@ object Lib {
         methodCount += 1
         val textifier = new Textifier()
         f(new InlineValidator(new TraceMethodVisitor(newMethod, textifier), superClassName))
-        val pw = new PrintWriter(System.out)
-        textifier.print(pw)
-        pw.flush()
+//        val pw = new PrintWriter(System.out)
+//        textifier.print(pw)
+//        pw.flush()
 
         newMethod.visitMaxs(-1, -1)
         newMethod.visitEnd()

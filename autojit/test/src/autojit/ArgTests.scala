@@ -1,41 +1,41 @@
 package autojit
 
 import utest._
-sealed trait Computation{
+sealed trait Arg{
   def eval(args: Array[Int]): Int
 }
-object Computation{
-  case class Val(i: Int) extends Computation{
+object Arg{
+  case class Val(i: Int) extends Arg{
     def eval(args: Array[Int]) = i
   }
-  case class Var(i: Int) extends Computation{
+  case class Var(i: Int) extends Arg{
     def eval(args: Array[Int]) = args(i)
   }
-  case class UDF(e: Computation, f: Int => Int) extends Computation{
+  case class UDF(e: Arg, f: Int => Int) extends Arg{
     def eval(args: Array[Int]) = f(e.eval(args))
   }
-  case class Add(l: Computation, r: Computation) extends Computation{
+  case class Add(l: Arg, r: Arg) extends Arg{
     def eval(args: Array[Int]) = l.eval(args) + r.eval(args)
   }
-  case class Sub(l: Computation, r: Computation) extends Computation{
+  case class Sub(l: Arg, r: Arg) extends Arg{
     def eval(args: Array[Int]) = l.eval(args) - r.eval(args)
   }
-  case class Mul(l: Computation, r: Computation) extends Computation{
+  case class Mul(l: Arg, r: Arg) extends Arg{
     def eval(args: Array[Int]) = l.eval(args) * r.eval(args)
   }
-  case class Div(l: Computation, r: Computation) extends Computation{
+  case class Div(l: Arg, r: Arg) extends Arg{
     def eval(args: Array[Int]) = l.eval(args) / r.eval(args)
   }
 }
 
-object ComputationTests extends TestSuite {
+object ArgTests extends TestSuite {
 //  def main(args: Array[String]): Unit ={
   def tests = Tests{
-    import Computation._
+    import Arg._
     'hello0 - {
       val expr = Var(1)
       val determinant = expr.eval(Array(5, 6, 1))
-      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
+      val determinant2 = Lib.devirtualize[Arg](expr, "eval").eval(Array(5, 6, 1))
       assert(
         determinant == 6,
         determinant2 == 6
@@ -44,7 +44,7 @@ object ComputationTests extends TestSuite {
     'hello1 - {
       val expr = Mul(Var(1), Val(2))
       val determinant = expr.eval(Array(5, 6, 1))
-      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
+      val determinant2 = Lib.devirtualize[Arg](expr, "eval").eval(Array(5, 6, 1))
       assert(
         determinant == 12,
         determinant2 == 12
@@ -60,7 +60,7 @@ object ComputationTests extends TestSuite {
         math.sqrt(_).toInt
       )
       val determinant = expr.eval(Array(5, 6, 1))
-      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(5, 6, 1))
+      val determinant2 = Lib.devirtualize[Arg](expr, "eval").eval(Array(5, 6, 1))
       assert(
         determinant == 4,
         determinant2 == 4
@@ -82,7 +82,7 @@ object ComputationTests extends TestSuite {
         Mul(Val(2), Var(0))
       )
       val determinant = expr.eval(Array(2, 5, -3))
-      val determinant2 = Lib.devirtualize[Computation](expr, "eval").eval(Array(2, 5, -3))
+      val determinant2 = Lib.devirtualize[Arg](expr, "eval").eval(Array(2, 5, -3))
       assert(
         determinant == -3,
         determinant2 == -3
@@ -101,7 +101,7 @@ object ComputationTests extends TestSuite {
 //        count1 += 1
 //      }
 //
-//      val jitted = Lib.devirtualize[Computation](expr, "eval")
+//      val jitted = Lib.devirtualize[Arg](expr, "eval")
 //      val start2 = System.currentTimeMillis()
 //      var count2 = 0
 //      while(System.currentTimeMillis() - start2 < 10000){
