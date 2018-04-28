@@ -177,8 +177,8 @@ object SchemeTests extends TestSuite{
               |      (if (zero? it)
               |          first
               |          ((fib-gen fib-gen) (- it 1) (+ first second) second)))))
-              | 15 1 0)""".stripMargin)
-      assert(fib10 == Value.Num(610))
+              | 20 1 0)""".stripMargin)
+      assert(fib10 == Value.Num(6765))
       fib10
     }
 
@@ -190,7 +190,7 @@ object SchemeTests extends TestSuite{
 //                          |      (if (zero? it)
 //                          |          first
 //                          |          ((fib-gen fib-gen) (- it 1) (+ first second) second)))))
-//                          | 15 1 0)""".stripMargin)
+//                          | 17 1 0)""".stripMargin)
 //      val start1 = System.currentTimeMillis()
 //      var count1 = 0
 //      while(System.currentTimeMillis() - start1 < 10000){

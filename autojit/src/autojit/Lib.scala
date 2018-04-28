@@ -5,8 +5,8 @@ import java.lang.invoke.{MethodHandles, MethodType}
 
 import org.objectweb.asm._
 import org.objectweb.asm.tree._
-import org.objectweb.asm.tree.analysis.Analyzer
-import org.objectweb.asm.util.{Textifier, TraceMethodVisitor}
+import org.objectweb.asm.tree.analysis.{Analyzer, BasicInterpreter}
+import org.objectweb.asm.util.{CheckClassAdapter, Textifier, TraceMethodVisitor}
 
 import collection.JavaConverters._
 import scala.collection.mutable
@@ -41,6 +41,7 @@ object Lib {
               withOut: (MethodVisitor => Unit) => String,
               newConst: Object => Any,
               loadClass: Any => ClassNode): String = withOut{ out =>
+    out.visitCode()
     self match{
       case self: Intrinsics.Lambda[_] =>
         val mn = cn.methods.asScala.find(_.name == methodName).get
@@ -155,7 +156,7 @@ object Lib {
         }
 
         out.visitVarInsn(Opcodes.ASTORE, 0)
-        for (wrapInsn <- cn.methods.asScala.find(_.name == "wrap").get.instructions.iterator().asScala.drop(1)){
+        for (wrapInsn <- cn.methods.asScala.find(_.name == "wrap").get.instructions.iterator().asScala){
           wrapInsn.accept(
             new MethodVisitor(Opcodes.ASM6, out) {
               override def visitVarInsn(opcode: Int, `var`: Int): Unit = {
@@ -216,21 +217,25 @@ object Lib {
         var bufferedMethod: java.lang.reflect.Method = null
         var bufferedValue: AnyRef = null
         for((insn, i) <- mn.instructions.iterator().asScala.zipWithIndex) {
-
           df.metadata.get(insn) match{
             case None => insn.accept(out)
             case Some(nextFrameTop) =>
               if (nextFrameTop.self.isDefined) () // do nothing
               else if (nextFrameTop.concrete.isDefined) {
                 bufferedMethod = self.getClass.getMethod(insn.asInstanceOf[MethodInsnNode].name)
-                bufferedValue = bufferedMethod.invoke(self)
+                bufferedValue = bufferedMethod.invoke(self) match{
+                  case i: java.lang.Byte => Int.box(i.toInt)
+                  case i: java.lang.Short => Int.box(i.toInt)
+                  case i => i
+                }
                 if (inlinedConcreteInsns.contains(insn)) () // do nothing
-                else if (bufferedMethod.getReturnType.isPrimitive) out.visitLdcInsn(bufferedValue)
-                else{
+                else if (bufferedMethod.getReturnType.isPrimitive) {
+                  out.visitLdcInsn(bufferedValue)
+                } else{
                   out.visitLdcInsn(newConst(bufferedValue))
                   out.visitTypeInsn(
                     Opcodes.CHECKCAST,
-                    Type.getType(bufferedMethod).getReturnType.getDescriptor
+                    Type.getType(bufferedMethod).getReturnType.getInternalName
                   )
                 }
               }else if (nextFrameTop.inlineable.isDefined) {
@@ -280,7 +285,8 @@ object Lib {
   }
 
   def transform(self: Object, superClass: Class[_], method: java.lang.reflect.Method) = {
-    val cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES)
+    val cw0 = new ClassWriter(ClassWriter.COMPUTE_FRAMES)
+    val cw = new CheckClassAdapter(cw0)
 
     cw.visit(
       Opcodes.V1_8,
@@ -300,14 +306,17 @@ object Lib {
     )
     constructor.visitInsn(Opcodes.RETURN)
     constructor.visitMaxs(100, 100)
+    val bi = new BasicInterpreter()
+
+
     constructor.visitEnd()
 
     val cachedSelfPlaceholders = mutable.Map.empty[Object, String]
     val cachedSelfIndices = mutable.Map.empty[Object, Int]
 
-    val loadedClasses = mutable.Map.empty[Class[_], ClassNode]
+    val loadedClasses = mutable.Map.empty[Class[_], Array[Byte]]
     def loadClass(self: Any) = {
-      loadedClasses.getOrElseUpdate(
+      val rawBytes = loadedClasses.getOrElseUpdate(
         self.getClass,
         {
           val classFile = "/"+self.getClass.getName.replace('.', '/') + ".class"
@@ -315,12 +324,13 @@ object Lib {
           val rawBytes = new Array[Byte](res.available())
           res.read(rawBytes)
           res.close()
-          val cr = new ClassReader(rawBytes)
-          val cn = new ClassNode()
-          cr.accept(cn, 0)
-          cn
+          rawBytes
         }
       )
+      val cr = new ClassReader(rawBytes)
+      val cn = new ClassNode()
+      cr.accept(cn, ClassReader.SKIP_FRAMES)
+      cn
     }
     val desc = getMethodDescriptor(method)
     val superClassName = Type.getInternalName(superClass)
@@ -334,9 +344,9 @@ object Lib {
     val start = new Label()
     val end = new Label()
 
-    mainMethod.visitLocalVariable("this", "Lgenerated/Hello;", null, start, end, 0)
     mainMethod.visitCode()
     mainMethod.visitLabel(start)
+
     for((p, i) <- method.getParameterTypes.zipWithIndex){
 
       p match{
@@ -366,8 +376,9 @@ object Lib {
       case p  => mainMethod.visitInsn(Opcodes.ARETURN)
     }
     mainMethod.visitLabel(end)
+    mainMethod.visitLocalVariable("this", "Lgenerated/Hello;", null, start, end, 0)
 
-    mainMethod.visitMaxs(-1, -1)
+    mainMethod.visitMaxs(100, 100)
     mainMethod.visitEnd()
 
     var methodCount = 0
@@ -383,13 +394,15 @@ object Lib {
           null
         )
         methodCount += 1
-        val textifier = new Textifier()
-        f(new InlineValidator(new TraceMethodVisitor(newMethod, textifier), superClassName))
+        f(new InlineValidator(newMethod, superClassName))
+//        val textifier = new Textifier()
+//        f(new InlineValidator(new TraceMethodVisitor(newMethod, textifier), superClassName))
 //        val pw = new PrintWriter(System.out)
+//        println("METHOD " + methodName)
 //        textifier.print(pw)
 //        pw.flush()
 
-        newMethod.visitMaxs(-1, -1)
+        newMethod.visitMaxs(100, 100)
         newMethod.visitEnd()
         methodName
       },
@@ -398,7 +411,7 @@ object Lib {
         else{
           val placeholder = "CONSTANT_PLACEHOLDER_" + cachedSelfPlaceholders.size
           cachedSelfPlaceholders(self) = placeholder
-          cachedSelfIndices(self) = cw.newConst(placeholder)
+          cachedSelfIndices(self) = cw0.newConst(placeholder)
           placeholder
         },
       loadClass
@@ -407,7 +420,7 @@ object Lib {
       if (cachedSelfIndices.isEmpty) null
       else new Array[Object](cachedSelfIndices.valuesIterator.max + 1)
     for((k, i) <- cachedSelfIndices) patches(i) = k
-    (cw.toByteArray, patches)
+    (cw0.toByteArray, patches)
   }
 
   def devirtualize[T: ClassTag](interpreted: T, entrypoint: String): T = {
@@ -425,6 +438,7 @@ object Lib {
       java.nio.file.Paths.get("Hello.class"),
       transformedBytes
     )
+
     val anon = unsafe.defineAnonymousClass(classOf[Function1[_, _]], transformedBytes, patches)
     anon.newInstance().asInstanceOf[T]
   }
